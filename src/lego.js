@@ -201,6 +201,7 @@
   box('3031', 'Пластина 4×4', 4, 4, 1, true);
   box('3032', 'Пластина 4×6', 6, 4, 1, true);
   box('3958', 'Пластина 6×6', 6, 6, 1, true);
+  box('91405', 'Пластина 16×16', 16, 16, 1, true);
 
   box('3070', 'Плитка 1×1', 1, 1, 1, false);
   box('3069', 'Плитка 1×2', 2, 1, 1, false);
@@ -313,7 +314,7 @@
   LEGO.place = function place(spec) {
     const def = LIB[spec.id];
     if (!def) throw new Error('lego.js: unknown part ' + spec.id);
-    const col = COLORS[spec.color];
+    const col = spec.rgb ? { rgb: spec.rgb } : COLORS[spec.color];
     if (!col) throw new Error('lego.js: unknown colour ' + spec.color);
     const up = UPS[spec.up || '+z'];
     if (!up) throw new Error('lego.js: unknown up ' + spec.up);
@@ -329,7 +330,7 @@
     }
     const at = spec.at || ZERO;
     const off = [at[0] - lo[0], at[1] - lo[1], at[2] * PLATE - lo[2]];
-    return { def, spec, M, off, rgb: col.rgb, color: spec.color };
+    return { def, spec, M, off, rgb: col.rgb, color: spec.color || null };
   };
 
   // ------------------------------------------------------------------ camera
@@ -339,14 +340,16 @@
     const th = ((o.theta == null ? 45 : o.theta) * PI) / 180;
     const ph = ((o.phi == null ? 30 : o.phi) * PI) / 180;
     const dir = [Math.sin(th) * Math.cos(ph), -Math.cos(th) * Math.cos(ph), Math.sin(ph)];
-    const right = norm([-dir[1], dir[0], 0]);
+    const right = [Math.cos(th), Math.sin(th), 0];
     const up = cross(right, [-dir[0], -dir[1], -dir[2]]);
     const T = o.target || ZERO;
     const s = o.scale || 60;
     const cx = o.cx || 0;
     const cy = o.cy || 0;
     // Light rides with the camera: tops brightest, left faces next, right faces darkest.
-    const L = norm(madd(madd(madd([0, 0, 0], right, -0.45), up, 0.85), dir, 0.5));
+    // o.light = [right, up, toward viewer] weights; a mosaic seen from above wants it mostly frontal.
+    const lg = o.light || [-0.45, 0.85, 0.5];
+    const L = norm(madd(madd(madd([0, 0, 0], right, lg[0]), up, lg[1]), dir, lg[2]));
     const project = (p) => {
       const dx = p[0] - T[0];
       const dy = p[1] - T[1];
@@ -456,8 +459,26 @@
 
   const depthOf = (mn, mx, cam) => dot([(mn[0] + mx[0]) / 2, (mn[1] + mx[1]) / 2, (mn[2] + mx[2]) / 2], cam.dir);
 
-  // A stud is hidden when another part's body sits over it.
-  function covered(q, self, bodies) {
+  // A stud is hidden when another part's body sits over it. With many bodies the candidates
+  // come from a grid index of their footprints instead of the whole list.
+  function coverIndex(bodies) {
+    if (bodies.length < 200) return null;
+    const cells = new Map();
+    for (const b of bodies) {
+      for (let x = Math.floor(b.min[0]); x < Math.ceil(b.max[0]); x++) {
+        for (let y = Math.floor(b.min[1]); y < Math.ceil(b.max[1]); y++) {
+          const k = x * 65536 + y;
+          const list = cells.get(k);
+          if (list) list.push(b);
+          else cells.set(k, [b]);
+        }
+      }
+    }
+    return cells;
+  }
+
+  function covered(q, self, bodies, index) {
+    if (index) bodies = index.get(Math.floor(q[0]) * 65536 + Math.floor(q[1])) || [];
     for (const b of bodies) {
       if (b === self) continue;
       if (
@@ -479,16 +500,21 @@
     return { kind: d.kind || 'disc', N, C: at(d.c), rx: d.rx || d.r, ry: d.ry || d.r, color: d.color };
   }
 
-  function prep(items, cam, pad) {
+  function prep(items, cam, pad, cull) {
     const bodies = [];
     for (const it of items) {
       const p = it.part;
+      if (cull && !it.base) {
+        const mv0 = it.move || ZERO;
+        const a = cam.project([p.off[0] + mv0[0], p.off[1] + mv0[1], p.off[2] + mv0[2]]);
+        if (a[0] < cull[0] || a[0] > cull[2] || a[1] < cull[1] || a[1] > cull[3]) continue;
+      }
       const g = geomOf(p.def);
       const mv = it.move || ZERO;
       const off = [p.off[0] + mv[0], p.off[1] + mv[1], p.off[2] + mv[2]];
       const pale = it.pale || 0;
       const o = {
-        type: 'body', part: p, off, rgb: p.rgb, pale, halo: it.halo || 0,
+        type: 'body', part: p, off, rgb: p.rgb, pale, halo: it.halo || 0, base: it.base ? 0 : 1,
         alpha: it.alpha == null ? 1 : it.alpha, edge: edgeTone(p.rgb, pale),
       };
       const mn = [Infinity, Infinity, Infinity];
@@ -527,6 +553,7 @@
       bodies.push(o);
     }
     const objs = bodies.slice();
+    const index = coverIndex(bodies);
     for (const b of bodies) {
       const p = b.part;
       for (const s of p.def.studs) {
@@ -534,13 +561,17 @@
         const ax = mulMV(p.M, s[3] || [0, 0, 1]);
         if (dot(ax, cam.dir) < -0.02) continue;
         const C = add(mulMV(p.M, s), b.off);
-        if (covered(madd(C, ax, 0.1), b, bodies)) continue;
+        if (cull) {
+          const a = cam.project(C);
+          if (a[0] < cull[0] || a[0] > cull[2] || a[1] < cull[1] || a[1] > cull[3]) continue;
+        }
+        if (covered(madd(C, ax, 0.1), b, bodies, index)) continue;
         const mn = [0, 0, 0];
         const mx = [0, 0, 0];
         cylBox(C, ax, STUD_R, STUD_H, mn, mx);
         const cyl = cylGeom(cam, C, ax, STUD_R, STUD_H);
         objs.push({
-          type: 'stud', owner: b, rgb: b.rgb, pale: b.pale, halo: b.halo, alpha: b.alpha, edge: b.edge,
+          type: 'stud', owner: b, rgb: b.rgb, pale: b.pale, halo: b.halo, alpha: b.alpha, edge: b.edge, base: 1,
           cyl, min: mn, max: mx, rect: rectOf(cyl.sil, pad), depth: depthOf(mn, mx, cam), prints: [],
         });
       }
@@ -694,7 +725,7 @@
     ctx.fill();
   }
 
-  function drawExt(ctx, cam, o, lw) {
+  function drawExt(ctx, cam, o, lw, ea) {
     const P = o.P;
     ctx.lineJoin = 'round';
     ctx.lineCap = 'round';
@@ -722,12 +753,13 @@
       ctx.moveTo(P[e.a][0], P[e.a][1]);
       ctx.lineTo(P[e.b][0], P[e.b][1]);
     }
+    ctx.globalAlpha *= ea;
     ctx.strokeStyle = o.edge;
     ctx.lineWidth = lw;
     ctx.stroke();
   }
 
-  function drawCyl(ctx, cam, o, lw) {
+  function drawCyl(ctx, cam, o, lw, ea) {
     const g = o.cyl;
     ctx.lineJoin = 'round';
     if (g.side) {
@@ -758,6 +790,7 @@
     ctx.fillStyle = tone(o.rgb, lightOf(cam, g.capN), o.pale);
     ctx.fill();
     for (const d of o.prints) drawPrint(ctx, cam, o, d, lw);
+    ctx.globalAlpha *= ea;
     ctx.strokeStyle = o.edge;
     ctx.lineWidth = lw;
     ctx.beginPath();
@@ -768,16 +801,23 @@
     ctx.stroke();
   }
 
-  // Draw a list of items ({ part, move, pale, halo, alpha }) back to front.
+  // Draw a list of items ({ part, move, pale, halo, alpha, base }) back to front.
+  // opt.fast skips the exact painter's order: items marked `base` first, then everything by depth.
+  // That is right for flat scenes like mosaics and fast enough for thousands of parts.
+  // opt.edgeAlpha fades the dark edges (1 = booklet look).
   LEGO.draw = function draw(ctx, items, cam, opt) {
-    const lw = (opt && opt.lineWidth) || Math.max(1, cam.scale * 0.02);
-    const objs = sortObjs(prep(items, cam, lw * 2.5), cam);
+    const o0 = opt || {};
+    const lw = o0.lineWidth || Math.max(1, cam.scale * 0.02);
+    const ea = o0.edgeAlpha == null ? 1 : o0.edgeAlpha;
+    // opt.cull [x0, y0, x1, y1]: small parts and studs outside this screen box are skipped
+    const prepped = prep(items, cam, lw * 2.5, o0.cull);
+    const objs = o0.fast ? prepped.sort((a, b) => a.base - b.base || a.depth - b.depth) : sortObjs(prepped, cam);
     for (const o of objs) {
       ctx.save();
       if (o.alpha < 1) ctx.globalAlpha = o.alpha;
       if (o.halo > 0) drawHalo(ctx, o, lw);
-      if (o.cyl) drawCyl(ctx, cam, o, lw);
-      else drawExt(ctx, cam, o, lw);
+      if (o.cyl) drawCyl(ctx, cam, o, lw, ea);
+      else drawExt(ctx, cam, o, lw, ea);
       ctx.restore();
     }
     return objs.length;

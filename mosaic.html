@@ -1,0 +1,318 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Портрет из LEGO</title>
+<style>
+  :root {
+    --ink: #1F2328; --muted: #5B6470; --line: #D4DBE5; --panel: #F7F9FC; --blue: #DDE8F5; --blue-line: #A9C0DD;
+    --yellow: #FFD21A; --font: "Helvetica Neue", Helvetica, Arial, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: #FFFFFF; color: var(--ink); font-family: var(--font); }
+  header { display: flex; align-items: baseline; gap: 16px; padding: 22px 28px 10px; }
+  header h1 { margin: 0; font-size: 30px; }
+  header p { margin: 0; color: var(--muted); font-size: 15px; }
+  .badge { background: var(--yellow); border-radius: 999px; padding: 4px 12px; font-weight: bold; font-size: 14px; }
+  main { display: grid; grid-template-columns: 320px 1fr; gap: 24px; padding: 12px 28px 40px; }
+  aside { display: flex; flex-direction: column; gap: 14px; }
+  .drop { border: 2px dashed var(--blue-line); background: var(--blue); border-radius: 14px; padding: 22px 16px; text-align: center; cursor: pointer; }
+  .drop.over { background: #CFE0F4; }
+  .drop b { display: block; font-size: 16px; margin-bottom: 4px; }
+  .drop span { color: var(--muted); font-size: 13px; }
+  .box { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; display: flex; flex-direction: column; gap: 12px; }
+  label { display: flex; flex-direction: column; gap: 5px; font-size: 13px; color: var(--muted); }
+  label .row { display: flex; justify-content: space-between; }
+  label .row b { color: var(--ink); font-weight: 600; }
+  input[type=range] { width: 100%; accent-color: #E8791A; }
+  select { font: inherit; font-size: 14px; padding: 6px 8px; border-radius: 8px; border: 1px solid var(--line); background: #FFF; color: var(--ink); }
+  .buttons { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  button { font: inherit; font-size: 14px; font-weight: 600; padding: 10px 8px; border-radius: 10px; border: 1px solid var(--line); background: #FFF; color: var(--ink); cursor: pointer; }
+  button.main { background: var(--yellow); border-color: #E7BD00; }
+  button:disabled { opacity: 0.45; cursor: default; }
+  .views { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+  figure { margin: 0; }
+  figure canvas { width: 100%; aspect-ratio: 1; display: block; border-radius: 10px; background: var(--panel); border: 1px solid var(--line); image-rendering: auto; }
+  figure canvas.pixels { image-rendering: pixelated; }
+  figcaption { font-size: 13px; color: var(--muted); margin-top: 6px; }
+  .empty { grid-column: 1 / -1; padding: 60px 20px; text-align: center; color: var(--muted); border: 1px solid var(--line); border-radius: 14px; background: var(--panel); }
+  table { border-collapse: collapse; width: 100%; font-size: 14px; margin-top: 18px; }
+  th { text-align: left; color: var(--muted); font-weight: 500; border-bottom: 1px solid var(--line); padding: 6px 8px; }
+  td { border-bottom: 1px solid #EDF1F6; padding: 6px 8px; }
+  td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .sw { display: inline-block; width: 16px; height: 16px; border: 1px solid rgba(0,0,0,0.25); vertical-align: -3px; margin-right: 8px; }
+  .sw.r { border-radius: 50%; }
+  .total { margin-top: 10px; font-size: 14px; color: var(--muted); }
+  .overlay { position: fixed; inset: 0; background: rgba(20, 24, 28, 0.86); display: none; align-items: center; justify-content: center; flex-direction: column; gap: 14px; z-index: 10; }
+  .overlay.on { display: flex; }
+  .overlay canvas { max-width: 94vw; max-height: 82vh; background: #FFF; border-radius: 8px; }
+  .overlay .bar { display: flex; gap: 10px; }
+  .note { font-size: 12px; color: var(--muted); line-height: 1.45; }
+  @media (max-width: 900px) { main { grid-template-columns: 1fr; } .views { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<header>
+  <span class="badge">LEGO</span>
+  <h1>Портрет из LEGO</h1>
+  <p>Фото превращается в мозаику из настоящих деталей. Фото не покидает браузер.</p>
+</header>
+<main>
+  <aside>
+    <div class="drop" id="drop"><b>Перетащите фото сюда</b><span>или нажмите, чтобы выбрать</span></div>
+    <input type="file" id="file" accept="image/*" hidden>
+    <div class="box">
+      <label>Размер мозаики
+        <select id="size"><option value="32">32×32, 4 пластины</option><option value="48">48×48, 9 пластин</option><option value="64" selected>64×64, 16 пластин</option><option value="80">80×80, 25 пластин</option><option value="96">96×96, 36 пластин</option></select>
+      </label>
+      <label>Детали
+        <select id="shape"><option value="mixed" selected>Круглые и квадратные плитки</option><option value="round">Только круглые, как LEGO Art</option><option value="square">Только квадратные</option></select>
+      </label>
+      <label>Палитра
+        <select id="palette"><option value="portrait" selected>Портрет, спокойные цвета</option><option value="all">Все цвета плиток</option></select>
+      </label>
+      <label><span class="row">Цветов <b id="colors-v"></b></span><input type="range" id="colors" min="3" max="24" value="12"></label>
+      <label><span class="row">Дизеринг <b id="dither-v"></b></span><input type="range" id="dither" min="0" max="100" value="50"></label>
+      <label><span class="row">Контраст <b id="contrast-v"></b></span><input type="range" id="contrast" min="0" max="100" value="50"></label>
+      <label><span class="row">Резкость <b id="sharpen-v"></b></span><input type="range" id="sharpen" min="0" max="100" value="50"></label>
+      <label><span class="row">Яркость <b id="brightness-v"></b></span><input type="range" id="brightness" min="-20" max="20" value="0"></label>
+      <label><span class="row">Насыщенность <b id="saturation-v"></b></span><input type="range" id="saturation" min="50" max="160" value="90"></label>
+      <label><span class="row">Масштаб кадра <b id="zoom-v"></b></span><input type="range" id="zoom" min="100" max="300" value="100"></label>
+      <label><span class="row">Сдвиг по горизонтали <b id="dx-v"></b></span><input type="range" id="dx" min="-30" max="30" value="0"></label>
+      <label><span class="row">Сдвиг по вертикали <b id="dy-v"></b></span><input type="range" id="dy" min="-30" max="30" value="0"></label>
+    </div>
+    <div class="buttons">
+      <button class="main" id="play" disabled>Смотреть сборку</button>
+      <button id="record" disabled>Записать видео</button>
+      <button id="save-lego" disabled>PNG портрета</button>
+      <button id="save-map" disabled>Карта сборки</button>
+    </div>
+    <label>Формат видео
+      <select id="format"><option value="horizontal" selected>Горизонтальное 1920×1080</option><option value="vertical">Вертикальное 1080×1920</option></select>
+    </label>
+    <p class="note">Цвета и детали сверены с каталогом BrickLink. Круглая плитка 98138, квадратная 3070, основа из черных пластин 16×16 (91405). LEGO является товарным знаком LEGO Group, проект неофициальный.</p>
+  </aside>
+  <section>
+    <div class="views" id="views">
+      <div class="empty" id="empty">Загрузите фото, лучше портрет анфас на ровном фоне</div>
+      <figure hidden><canvas id="c-photo" width="600" height="600"></canvas><figcaption>Фото, кадр</figcaption></figure>
+      <figure hidden><canvas id="c-grid" class="pixels"></canvas><figcaption id="grid-cap">Сетка цветов</figcaption></figure>
+      <figure hidden><canvas id="c-lego" width="1200" height="1200"></canvas><figcaption>LEGO</figcaption></figure>
+    </div>
+    <table id="parts" hidden>
+      <thead><tr><th>№</th><th>Цвет</th><th>Деталь</th><th class="num">Штук</th></tr></thead>
+      <tbody></tbody>
+    </table>
+    <div class="total" id="total"></div>
+  </section>
+</main>
+<div class="overlay" id="overlay">
+  <canvas id="c-film"></canvas>
+  <div class="bar"><button id="replay">Сначала</button><button id="close">Закрыть</button></div>
+</div>
+
+<script src="src/lego.js"></script>
+<script src="src/mosaic.js"></script>
+<script src="src/mosaic-film.js"></script>
+<script>
+// Page wiring. The same API drives tools/mosaic.cjs: MOSAIC_APP.load(dataURL), set(opts), png(kind), film(format).
+(function () {
+  const $ = (id) => document.getElementById(id);
+  const q = new URLSearchParams(location.search);
+  const state = { img: null, res: null, scene: null };
+  const opts = () => ({
+    size: +$('size').value, shape: $('shape').value, palette: $('palette').value, colors: +$('colors').value,
+    dither: $('dither').value / 100, contrast: $('contrast').value / 100, sharpen: $('sharpen').value / 100,
+    brightness: +$('brightness').value, saturation: $('saturation').value / 100, zoom: $('zoom').value / 100,
+    dx: $('dx').value / 100, dy: $('dy').value / 100,
+  });
+  const shown = { colors: (v) => v, dither: (v) => v + '%', contrast: (v) => v + '%', sharpen: (v) => v + '%', brightness: (v) => (v > 0 ? '+' : '') + v,
+    saturation: (v) => v + '%', zoom: (v) => v + '%', dx: (v) => v + '%', dy: (v) => v + '%' };
+  for (const k of Object.keys(shown)) $(k + '-v').textContent = shown[k]($(k).value);
+
+  function load(src) {
+    return new Promise((ok, fail) => {
+      const im = new Image();
+      im.onload = () => {
+        const c = document.createElement('canvas');
+        c.width = im.naturalWidth;
+        c.height = im.naturalHeight;
+        const x = c.getContext('2d');
+        x.drawImage(im, 0, 0);
+        state.img = { canvas: c, data: x.getImageData(0, 0, c.width, c.height).data, width: c.width, height: c.height };
+        ok();
+      };
+      im.onerror = fail;
+      im.src = src;
+    });
+  }
+
+  // the square crop as a canvas, for the side by side at the end of the film
+  function photoCrop(size) {
+    const c = document.createElement('canvas');
+    c.width = c.height = size;
+    const cr = state.res.crop;
+    c.getContext('2d').drawImage(state.img.canvas, cr.x, cr.y, cr.side, cr.side, 0, 0, size, size);
+    return c;
+  }
+
+  function run() {
+    if (!state.img) return null;
+    const res = (state.res = MOSAIC.build(state.img, opts()));
+    state.scene = MOSAIC.scene(res);
+    for (const f of document.querySelectorAll('figure')) f.hidden = false;
+    $('empty').hidden = true;
+    const ph = $('c-photo').getContext('2d');
+    ph.drawImage(photoCrop(600), 0, 0);
+    const g = $('c-grid');
+    g.width = g.height = res.n;
+    g.getContext('2d').putImageData(new ImageData(res.tiles, res.n, res.n), 0, 0);
+    $('grid-cap').textContent = 'Сетка цветов ' + res.n + '×' + res.n;
+    const lc = $('c-lego');
+    const lx = lc.getContext('2d');
+    lx.fillStyle = '#FFFFFF';
+    lx.fillRect(0, 0, lc.width, lc.height);
+    MOSAIC.drawTop(lx, res, 0, 0, lc.width, state.scene);
+    const body = $('parts').querySelector('tbody');
+    body.innerHTML = '';
+    for (const p of res.parts) {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `<td>${p.symbol}</td><td><span class="sw ${p.shape}" style="background:${p.color.hex}"></span>${p.color.ru} <span style="color:#8A919B">${p.color.name}</span></td>` +
+        `<td>${MOSAIC.SHAPES[p.shape].ru}, ${p.part}</td><td class="num">${p.count}</td>`;
+      body.appendChild(tr);
+    }
+    $('parts').hidden = false;
+    $('total').textContent = `Всего ${res.n * res.n} плиток ${res.colorsUsed} цветов и ${res.plates} черных пластин 16×16 (91405).`;
+    for (const b of ['play', 'record', 'save-lego', 'save-map']) $(b).disabled = false;
+    return { n: res.n, colors: res.colorsUsed, plates: res.plates, parts: res.parts.map((p) => ({ n: p.symbol, name: p.color.name, ru: p.color.ru, part: p.part, count: p.count })) };
+  }
+
+  let timer = 0;
+  const later = () => { clearTimeout(timer); timer = setTimeout(run, 120); };
+  for (const el of document.querySelectorAll('aside select, aside input[type=range]')) {
+    el.addEventListener('input', () => { if (shown[el.id]) $(el.id + '-v').textContent = shown[el.id](el.value); if (el.id !== 'format') later(); });
+  }
+
+  const pick = (file) => { if (!file) return; const r = new FileReader(); r.onload = () => load(r.result).then(run); r.readAsDataURL(file); };
+  $('drop').onclick = () => $('file').click();
+  $('file').onchange = (e) => pick(e.target.files[0]);
+  $('drop').ondragover = (e) => { e.preventDefault(); $('drop').classList.add('over'); };
+  $('drop').ondragleave = () => $('drop').classList.remove('over');
+  $('drop').ondrop = (e) => { e.preventDefault(); $('drop').classList.remove('over'); pick(e.dataTransfer.files[0]); };
+  addEventListener('paste', (e) => { const f = [...e.clipboardData.files][0]; if (f) pick(f); });
+
+  function png(kind) {
+    const res = state.res;
+    const c = document.createElement('canvas');
+    const x = c.getContext('2d');
+    if (kind === 'lego') {
+      c.width = c.height = 2048;
+      x.fillStyle = '#FFFFFF';
+      x.fillRect(0, 0, 2048, 2048);
+      MOSAIC.drawTop(x, res, 0, 0, 2048, state.scene);
+    } else if (kind === 'map') {
+      const cell = Math.max(16, Math.floor(1600 / res.n));
+      const legendRows = Math.ceil(res.parts.length / 3);
+      c.width = res.n * cell + 80;
+      c.height = res.n * cell + 140 + legendRows * 40;
+      x.fillStyle = '#FFFFFF';
+      x.fillRect(0, 0, c.width, c.height);
+      x.fillStyle = '#1F2328';
+      x.font = 'bold 30px "Helvetica Neue", Helvetica, Arial, sans-serif';
+      x.fillText('Карта сборки ' + res.n + '×' + res.n + ', секции 16×16', 40, 52);
+      MOSAIC.drawMap(x, res, 40, 80, cell);
+      x.font = '18px "Helvetica Neue", Helvetica, Arial, sans-serif';
+      res.parts.forEach((p, i) => {
+        const lx = 40 + (i % 3) * ((c.width - 80) / 3);
+        const ly = 80 + res.n * cell + 40 + Math.floor(i / 3) * 40;
+        x.fillStyle = p.color.hex;
+        x.beginPath();
+        if (p.shape === 'r') x.arc(lx + 12, ly - 6, 12, 0, 2 * Math.PI);
+        else x.rect(lx, ly - 18, 24, 24);
+        x.fill();
+        x.strokeStyle = 'rgba(0,0,0,0.3)';
+        x.stroke();
+        x.fillStyle = '#1F2328';
+        x.fillText(`${p.symbol}. ${p.color.ru}, ${p.part}, ${p.count} шт`, lx + 34, ly);
+      });
+    } else {
+      // photo, grid, LEGO side by side
+      const s = 900;
+      c.width = s * 3 + 80;
+      c.height = s + 40;
+      x.fillStyle = '#FFFFFF';
+      x.fillRect(0, 0, c.width, c.height);
+      x.drawImage(photoCrop(s), 20, 20);
+      x.imageSmoothingEnabled = false;
+      x.drawImage($('c-grid'), s + 40, 20, s, s);
+      x.imageSmoothingEnabled = true;
+      MOSAIC.drawTop(x, res, 2 * s + 60, 20, s, state.scene);
+    }
+    return c.toDataURL('image/png');
+  }
+
+  const download = (url, name) => { const a = document.createElement('a'); a.href = url; a.download = name; a.click(); };
+  $('save-lego').onclick = () => download(png('lego'), 'lego-portrait.png');
+  $('save-map').onclick = () => download(png('map'), 'lego-portrait-map.png');
+
+  // film playback in the overlay, and webm recording of it
+  let raf = 0;
+  function film(format) {
+    const f = MOSAIC.film(state.res, photoCrop(900), { format: format || $('format').value });
+    const c = $('c-film');
+    c.width = f.W;
+    c.height = f.H;
+    return { f, c, x: c.getContext('2d') };
+  }
+  function play(record) {
+    cancelAnimationFrame(raf);
+    const { f, c, x } = film();
+    $('overlay').classList.add('on');
+    let rec = null;
+    const chunks = [];
+    if (record && window.MediaRecorder) {
+      const type = ['video/webm;codecs=vp9', 'video/webm'].find((t) => MediaRecorder.isTypeSupported(t));
+      rec = new MediaRecorder(c.captureStream(30), { mimeType: type, videoBitsPerSecond: 12e6 });
+      rec.ondataavailable = (e) => chunks.push(e.data);
+      rec.onstop = () => download(URL.createObjectURL(new Blob(chunks, { type: 'video/webm' })), 'lego-portrait.webm');
+      rec.start();
+    }
+    const t0 = performance.now();
+    const tick = (now) => {
+      const t = (now - t0) / 1000;
+      f.draw(x, Math.min(t, f.duration));
+      if (t < f.duration) raf = requestAnimationFrame(tick);
+      else if (rec) rec.stop();
+    };
+    raf = requestAnimationFrame(tick);
+  }
+  $('play').onclick = () => play(false);
+  $('record').onclick = () => play(true);
+  $('replay').onclick = () => play(false);
+  $('close').onclick = () => { cancelAnimationFrame(raf); $('overlay').classList.remove('on'); };
+
+  window.MOSAIC_APP = {
+    load,
+    set(o) {
+      for (const [k, v] of Object.entries(o)) {
+        const el = $(k);
+        if (!el) continue;
+        el.value = ['dither', 'contrast', 'sharpen', 'saturation', 'zoom', 'dx', 'dy'].includes(k) ? Math.round(v * 100) : v;
+      }
+    },
+    run,
+    png,
+    film(format) {
+      const { f, c, x } = film(format);
+      window.VIEW = f;
+      window.CANVAS = c;
+      window.drawAt = (t) => f.draw(x, t);
+      return { W: f.W, H: f.H, duration: f.duration };
+    },
+  };
+  if (q.has('render')) window.READY = true;
+})();
+</script>
+</body>
+</html>
