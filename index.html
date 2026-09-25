@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Лего-сборка</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #E9ECEF; }
+  canvas { display: block; margin: 0 auto; max-width: 100vw; max-height: 100vh; width: auto; height: auto; background: #FFFFFF; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script src="src/lego.js"></script>
+<script src="src/booklet.js"></script>
+<script src="src/models/microduck.js"></script>
+<script src="src/models/cat.js"></script>
+<script src="src/parts-sheet.js"></script>
+<script>
+// Player. Click or space plays and pauses, arrows step a frame, ?t=5 opens at a moment,
+// ?model=cat|microduck picks the model, ?format=horizontal turns the page to 1920 x 1080,
+// ?view=parts shows the parts sheet, ?render=1 leaves drawing to the render tools.
+(function () {
+  const q = new URLSearchParams(location.search);
+  const cv = document.getElementById('c');
+  const ctx = cv.getContext('2d');
+  const view = q.get('view') === 'parts'
+    ? window.PARTS_SHEET
+    : window.LEGO.booklet(window.MODELS[q.get('model') || 'cat'], q.get('format') || 'vertical');
+  cv.width = view.W;
+  cv.height = view.H;
+  window.VIEW = view;
+  window.CANVAS = cv;
+  window.drawAt = (t) => view.draw(ctx, t);
+  if (q.has('render')) {
+    window.READY = true;
+    return;
+  }
+  let t = parseFloat(q.get('t') || '0');
+  let playing = !q.has('t') && !!view.duration;
+  let last = null;
+  function frame(now) {
+    if (playing) {
+      if (last != null) t += (now - last) / 1000;
+      if (t > view.duration) t = 0;
+    }
+    last = now;
+    view.draw(ctx, t);
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+  addEventListener('keydown', (e) => {
+    if (e.code === 'Space') { playing = !playing; last = null; }
+    if (e.code === 'ArrowRight') t += 1 / 30;
+    if (e.code === 'ArrowLeft') t = Math.max(0, t - 1 / 30);
+  });
+  cv.addEventListener('click', () => { playing = !playing; last = null; });
+})();
+</script>
+</body>
+</html>

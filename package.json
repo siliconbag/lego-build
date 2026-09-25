@@ -1,0 +1,15 @@
+{
+  "name": "lego-build",
+  "version": "1.0.0",
+  "description": "LEGO building-instruction animations drawn in plain Canvas 2D",
+  "private": true,
+  "license": "MIT",
+  "scripts": {
+    "render": "node tools/render.cjs",
+    "snap": "node tools/snap.cjs",
+    "check": "node tools/check-model.cjs"
+  },
+  "devDependencies": {
+    "playwright": "^1.55.0"
+  }
+}
