@@ -1,5 +1,5 @@
 // Render single frames to PNG.
-//   node tools/snap.cjs 0.5 3 8.2 [--model cat] [--format horizontal]  -> exports/<model>-<t>.png
+//   node tools/snap.cjs 0.5 3 8.2 [--model cat] [--format horizontal]  -> exports/<model>[-16x9]-<t>.png
 //   node tools/snap.cjs --parts                  -> exports/parts.png
 const path = require('path');
 const fs = require('fs');
@@ -26,7 +26,7 @@ const { chromium } = require('playwright');
   for (const t of list) {
     const ms = await page.evaluate((tt) => { const a = Date.now(); window.drawAt(tt); return Date.now() - a; }, t);
     const b64 = await page.evaluate(() => window.CANVAS.toDataURL('image/png').slice(22));
-    const file = path.join(out, parts ? 'parts.png' : `${model}-${t.toFixed(2)}.png`);
+    const file = path.join(out, parts ? 'parts.png' : `${model}${format === 'horizontal' ? '-16x9' : ''}-${t.toFixed(2)}.png`);
     fs.writeFileSync(file, Buffer.from(b64, 'base64'));
     console.log(file, ms + ' ms');
   }

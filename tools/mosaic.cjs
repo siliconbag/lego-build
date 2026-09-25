@@ -1,9 +1,10 @@
 // Photo to LEGO mosaic from the command line, through mosaic.html in headless Chromium.
 //   node tools/mosaic.cjs photo.jpg [--size 64] [--colors 12] [--shape mixed|round|square] [--dither 0.5]
 //        [--contrast 0.5] [--sharpen 0.5] [--palette portrait|all] [--zoom 1] [--dx 0] [--dy 0]
-//        [--video] [--format horizontal|vertical] [--name portrait]
+//        [--video] [--frames 3,9,15] [--format horizontal|vertical] [--name portrait]
 // Writes exports/<name>-compare.png (photo, grid, LEGO), <name>-lego.png, <name>-map.png,
-// <name>-parts.md and with --video <name>-build.mp4 (or -build-vertical.mp4).
+// <name>-parts.md, with --frames single film frames <name>-frame-<t>.png, and with --video
+// <name>-build.mp4 (or -build-vertical.mp4).
 const path = require('path');
 const fs = require('fs');
 const { spawn } = require('child_process');
@@ -23,6 +24,7 @@ const num = ['size', 'colors', 'dither', 'contrast', 'sharpen', 'brightness', 's
 const opts = {};
 for (const k of num) if (arg('--' + k) != null) opts[k] = Number(arg('--' + k));
 for (const k of ['shape', 'palette']) if (arg('--' + k) != null) opts[k] = arg('--' + k);
+const frames = (arg('--frames') || '').split(',').filter(Boolean).map(Number);
 const name = arg('--name', path.basename(photo).replace(/\.[^.]+$/, ''));
 const format = arg('--format', 'horizontal');
 const out = path.resolve(__dirname, '../exports');
@@ -52,6 +54,16 @@ fs.mkdirSync(out, { recursive: true });
     `# Детали портрета ${sum.n}×${sum.n}\n\n| № | Цвет | Деталь | Штук |\n|---|---|---|---|\n${lines.join('\n')}\n| | Black | 91405 пластина 16×16 | ${sum.plates} |\n`
   );
   console.log('pictures and parts list in', out);
+
+  if (frames.length) {
+    const f = await page.evaluate((fm) => window.MOSAIC_APP.film(fm), format);
+    for (const tt of frames) {
+      const b64 = await page.evaluate((x) => { window.drawAt(x); return window.CANVAS.toDataURL('image/png').slice(22); }, Math.min(tt, f.duration));
+      const file = path.join(out, `${name}-frame-${tt}.png`);
+      fs.writeFileSync(file, Buffer.from(b64, 'base64'));
+      console.log(file);
+    }
+  }
 
   if (args.includes('--video')) {
     const f = await page.evaluate((fm) => window.MOSAIC_APP.film(fm), format);
