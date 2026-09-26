@@ -29,6 +29,7 @@
 Модель регистрируется так, ключ совпадает с именем файла.
 
 ```js
+window.MODELS = window.MODELS || {};
 window.MODELS.cat = { title: 'Котик', theta: 35, phi: 28, steps: STEPS };
 ```
 

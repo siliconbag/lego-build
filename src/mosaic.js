@@ -207,7 +207,8 @@
    * o.size   studs per side, a multiple of 16 (the 16 x 16 plates)
    * o.zoom   crop zoom, 1 = the largest centred square; o.dx, o.dy shift it (fractions of the photo)
    * o.contrast 0..1 levels stretch to the palette's range, o.sharpen 0..1, o.saturation, o.brightness (L*)
-   * o.colors how many LEGO colours to use, o.palette 'portrait' | 'all', o.shape 'round' | 'square' | 'mixed'
+   * o.colors how many LEGO colours to use, o.palette 'portrait' | 'all' (a black and white photo gets
+   * only the greys either way), o.shape 'round' | 'square' | 'mixed'
    * o.dither 0..1, o.clean 0..2 passes that drop lone dither specks (lines survive, they have neighbours)
    */
   MOSAIC.build = function build(img, o) {
@@ -232,19 +233,31 @@
     const ye = Math.min(H, Math.ceil(y0 + side));
     const xs = Math.max(0, Math.floor(x0));
     const xe = Math.min(W, Math.ceil(x0 + side));
+    // a pixel in linear light, see-through parts laid over white paper
+    const add = (c, x, y) => {
+      const i = (y * W + x) * 4;
+      const a = img.data[i + 3] / 255;
+      acc[c * 3] += a * LIN[img.data[i]] + 1 - a;
+      acc[c * 3 + 1] += a * LIN[img.data[i + 1]] + 1 - a;
+      acc[c * 3 + 2] += a * LIN[img.data[i + 2]] + 1 - a;
+      cnt[c]++;
+    };
     for (let y = ys; y < ye; y++) {
       const gy = Math.floor(((y + 0.5 - y0) / side) * n);
       if (gy < 0 || gy >= n) continue;
       for (let x = xs; x < xe; x++) {
         const gx = Math.floor(((x + 0.5 - x0) / side) * n);
         if (gx < 0 || gx >= n) continue;
-        const i = (y * W + x) * 4;
-        const c = gy * n + gx;
-        acc[c * 3] += LIN[img.data[i]];
-        acc[c * 3 + 1] += LIN[img.data[i + 1]];
-        acc[c * 3 + 2] += LIN[img.data[i + 2]];
-        cnt[c]++;
+        add(gy * n + gx, x, y);
       }
+    }
+    // a crop smaller than the grid (small photo, strong zoom) leaves cells without a pixel:
+    // they take the nearest one instead of going black
+    for (let c = 0; c < N; c++) {
+      if (cnt[c]) continue;
+      const x = clamp(Math.floor(x0 + ((c % n) + 0.5) * (side / n)), 0, W - 1);
+      const y = clamp(Math.floor(y0 + (Math.floor(c / n) + 0.5) * (side / n)), 0, H - 1);
+      add(c, x, y);
     }
 
     const Ls = new Float32Array(N);
@@ -260,7 +273,7 @@
 
     // a photo with next to no colour is black and white: keep tinted tiles out of it
     let palette = opt.palette;
-    if (palette === 'portrait') {
+    if (palette === 'portrait' || palette === 'all') {
       const chroma = new Float32Array(N);
       for (let c = 0; c < N; c++) chroma[c] = Math.hypot(As[c], Bs[c]);
       if (percentile(chroma, 0.95) < 6) palette = 'gray';
@@ -277,9 +290,11 @@
     const p1 = percentile(Ls, 0.01);
     const p99 = percentile(Ls, 0.99);
     const span = Math.max(1, p99 - p1);
+    // a nearly flat photo has nothing to stretch: fade the stretch out instead of blowing it up
+    const stretch = opt.contrast * Math.min(1, (p99 - p1) / 20);
     for (let c = 0; c < N; c++) {
       const stretched = lo + ((Ls[c] - p1) / span) * (hi - lo);
-      Ls[c] = clamp(Ls[c] + opt.contrast * (stretched - Ls[c]) + opt.brightness, 0, 100);
+      Ls[c] = clamp(Ls[c] + stretch * (stretched - Ls[c]) + opt.brightness, 0, 100);
     }
     if (opt.sharpen > 0) {
       const blur = new Float32Array(N);

@@ -91,6 +91,7 @@
     <label>Формат видео
       <select id="format"><option value="horizontal" selected>Горизонтальное 1920×1080</option><option value="vertical">Вертикальное 1080×1920</option></select>
     </label>
+    <p class="note">Видео в браузере пишется в реальном времени, на больших мозаиках кадры могут дергаться. Ровное видео дает команда <code>node tools/mosaic.cjs фото.jpg --video</code>.</p>
     <p class="note">Цвета и детали сверены с каталогом BrickLink. Круглая плитка 98138, квадратная 3070, основа из черных пластин 16×16 (91405). LEGO является товарным знаком LEGO Group, проект неофициальный.</p>
   </aside>
   <section>
@@ -120,13 +121,13 @@
 (function () {
   const $ = (id) => document.getElementById(id);
   const q = new URLSearchParams(location.search);
-  const state = { img: null, res: null, scene: null };
-  const opts = () => ({
+  const state = { img: null, res: null, scene: null, over: {} };
+  const opts = () => Object.assign({
     size: +$('size').value, shape: $('shape').value, palette: $('palette').value, colors: +$('colors').value,
     dither: $('dither').value / 100, contrast: $('contrast').value / 100, sharpen: $('sharpen').value / 100,
     brightness: +$('brightness').value, saturation: $('saturation').value / 100, zoom: $('zoom').value / 100,
     dx: $('dx').value / 100, dy: $('dy').value / 100,
-  });
+  }, state.over);
   const shown = { colors: (v) => v, dither: (v) => v + '%', contrast: (v) => v + '%', sharpen: (v) => v + '%', brightness: (v) => (v > 0 ? '+' : '') + v,
     saturation: (v) => v + '%', zoom: (v) => v + '%', dx: (v) => v + '%', dy: (v) => v + '%' };
   for (const k of Object.keys(shown)) $(k + '-v').textContent = shown[k]($(k).value);
@@ -139,11 +140,14 @@
         c.width = im.naturalWidth;
         c.height = im.naturalHeight;
         const x = c.getContext('2d');
+        // see-through parts go over white, the way the photo looks on the page
+        x.fillStyle = '#FFFFFF';
+        x.fillRect(0, 0, c.width, c.height);
         x.drawImage(im, 0, 0);
         state.img = { canvas: c, data: x.getImageData(0, 0, c.width, c.height).data, width: c.width, height: c.height };
         ok();
       };
-      im.onerror = fail;
+      im.onerror = () => fail(new Error('Браузер не смог открыть это фото. HEIC с айфона не поддерживается, сохраните его как JPEG, PNG или WebP'));
       im.src = src;
     });
   }
@@ -164,6 +168,8 @@
     for (const f of document.querySelectorAll('figure')) f.hidden = false;
     $('empty').hidden = true;
     const ph = $('c-photo').getContext('2d');
+    ph.fillStyle = '#FFFFFF';
+    ph.fillRect(0, 0, 600, 600);
     ph.drawImage(photoCrop(600), 0, 0);
     const g = $('c-grid');
     g.width = g.height = res.n;
@@ -183,7 +189,9 @@
       body.appendChild(tr);
     }
     $('parts').hidden = false;
-    $('total').textContent = `Всего ${res.n * res.n} плиток ${res.colorsUsed} цветов и ${res.plates} черных пластин 16×16 (91405).`;
+    const pl = MOSAIC.plural;
+    const tiles = res.n * res.n;
+    $('total').textContent = `Всего ${tiles} ${pl(tiles, ['плитка', 'плитки', 'плиток'])} ${res.colorsUsed} ${pl(res.colorsUsed, ['цвета', 'цветов', 'цветов'])} и ${res.plates} ${pl(res.plates, ['черная пластина', 'черные пластины', 'черных пластин'])} 16×16 (91405).`;
     for (const b of ['play', 'record', 'save-lego', 'save-map']) $(b).disabled = false;
     return { n: res.n, colors: res.colorsUsed, plates: res.plates, parts: res.parts.map((p) => ({ n: p.symbol, name: p.color.name, ru: p.color.ru, part: p.part, count: p.count })) };
   }
@@ -194,7 +202,12 @@
     el.addEventListener('input', () => { if (shown[el.id]) $(el.id + '-v').textContent = shown[el.id](el.value); if (el.id !== 'format') later(); });
   }
 
-  const pick = (file) => { if (!file) return; const r = new FileReader(); r.onload = () => load(r.result).then(run); r.readAsDataURL(file); };
+  const pick = (file) => {
+    if (!file) return;
+    const r = new FileReader();
+    r.onload = () => load(r.result).then(run).catch((e) => { $('empty').hidden = false; $('empty').textContent = e.message; });
+    r.readAsDataURL(file);
+  };
   $('drop').onclick = () => $('file').click();
   $('file').onchange = (e) => pick(e.target.files[0]);
   $('drop').ondragover = (e) => { e.preventDefault(); $('drop').classList.add('over'); };
@@ -258,6 +271,14 @@
 
   // film playback in the overlay, and webm recording of it
   let raf = 0;
+  let rec = null;
+  // a recording cut short by Close or Replay is dropped, not saved half done
+  function stopRecording(save) {
+    if (!rec) return;
+    rec.keep = save;
+    if (rec.state !== 'inactive') rec.stop();
+    rec = null;
+  }
   function film(format) {
     const f = MOSAIC.film(state.res, photoCrop(900), { format: format || $('format').value });
     const c = $('c-film');
@@ -267,39 +288,40 @@
   }
   function play(record) {
     cancelAnimationFrame(raf);
+    stopRecording(false);
     const { f, c, x } = film();
     $('overlay').classList.add('on');
-    let rec = null;
-    const chunks = [];
     if (record && window.MediaRecorder) {
-      const type = ['video/webm;codecs=vp9', 'video/webm'].find((t) => MediaRecorder.isTypeSupported(t));
-      rec = new MediaRecorder(c.captureStream(30), { mimeType: type, videoBitsPerSecond: 12e6 });
-      rec.ondataavailable = (e) => chunks.push(e.data);
-      rec.onstop = () => download(URL.createObjectURL(new Blob(chunks, { type: 'video/webm' })), 'lego-portrait.webm');
-      rec.start();
+      const type = ['video/webm;codecs=vp9', 'video/webm', 'video/mp4'].find((t) => MediaRecorder.isTypeSupported(t));
+      const r = (rec = new MediaRecorder(c.captureStream(30), { mimeType: type, videoBitsPerSecond: 12e6 }));
+      const chunks = [];
+      r.ondataavailable = (e) => chunks.push(e.data);
+      r.onstop = () => {
+        if (!r.keep) return;
+        const ext = r.mimeType.includes('mp4') ? 'mp4' : 'webm';
+        download(URL.createObjectURL(new Blob(chunks, { type: r.mimeType })), 'lego-portrait.' + ext);
+      };
+      r.start();
     }
     const t0 = performance.now();
     const tick = (now) => {
       const t = (now - t0) / 1000;
       f.draw(x, Math.min(t, f.duration));
       if (t < f.duration) raf = requestAnimationFrame(tick);
-      else if (rec) rec.stop();
+      else stopRecording(true);
     };
     raf = requestAnimationFrame(tick);
   }
   $('play').onclick = () => play(false);
   $('record').onclick = () => play(true);
   $('replay').onclick = () => play(false);
-  $('close').onclick = () => { cancelAnimationFrame(raf); $('overlay').classList.remove('on'); };
+  $('close').onclick = () => { cancelAnimationFrame(raf); stopRecording(false); $('overlay').classList.remove('on'); };
 
   window.MOSAIC_APP = {
     load,
+    // options from tools/mosaic.cjs reach build() as given, without the form's ranges
     set(o) {
-      for (const [k, v] of Object.entries(o)) {
-        const el = $(k);
-        if (!el) continue;
-        el.value = ['dither', 'contrast', 'sharpen', 'saturation', 'zoom', 'dx', 'dy'].includes(k) ? Math.round(v * 100) : v;
-      }
+      state.over = Object.assign({}, o);
     },
     run,
     png,

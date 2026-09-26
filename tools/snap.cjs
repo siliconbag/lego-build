@@ -3,6 +3,7 @@
 //   node tools/snap.cjs --parts                  -> exports/parts.png
 const path = require('path');
 const fs = require('fs');
+const { pathToFileURL } = require('url');
 const { chromium } = require('playwright');
 
 (async () => {
@@ -19,7 +20,7 @@ const { chromium } = require('playwright');
   const page = await browser.newPage();
   page.on('console', (m) => { if (m.type() === 'error') console.error('page:', m.text()); });
   page.on('pageerror', (e) => console.error('page error:', e.message));
-  const url = 'file://' + path.resolve(__dirname, '../index.html') + '?render=1' + (parts ? '&view=parts' : '&model=' + model + '&format=' + format);
+  const url = pathToFileURL(path.resolve(__dirname, '../index.html')).href + '?render=1' + (parts ? '&view=parts' : '&model=' + model + '&format=' + format);
   await page.goto(url);
   await page.waitForFunction(() => window.READY === true);
   const list = parts ? [0] : times;

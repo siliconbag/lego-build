@@ -3,6 +3,7 @@
 const path = require('path');
 const fs = require('fs');
 const { spawn } = require('child_process');
+const { pathToFileURL } = require('url');
 const { chromium } = require('playwright');
 
 const arg = (name, def) => {
@@ -19,7 +20,7 @@ const arg = (name, def) => {
   const browser = await chromium.launch();
   const page = await browser.newPage();
   page.on('pageerror', (e) => console.error('page error:', e.message));
-  await page.goto('file://' + path.resolve(__dirname, '../index.html') + '?render=1&model=' + model + '&format=' + format);
+  await page.goto(pathToFileURL(path.resolve(__dirname, '../index.html')).href + '?render=1&model=' + model + '&format=' + format);
   await page.waitForFunction(() => window.READY === true);
   const dur = await page.evaluate(() => window.VIEW.duration);
   const n = Math.round(dur * fps);

@@ -19,6 +19,7 @@
   const INK = '#1F2328';
   const PLATE_RGB = [22, 26, 30]; // black plate, a touch lifted so its studs read
   const TOP_LIGHT = [-0.25, 0.35, 1];
+  const SIDE_LIGHT = [-0.45, 0.85, 0.5]; // lego.js default
 
   const clamp = (v) => (v < 0 ? 0 : v > 1 ? 1 : v);
   const inOut = (u) => (u < 0.5 ? 4 * u * u * u : 1 - Math.pow(-2 * u + 2, 3) / 2);
@@ -32,6 +33,7 @@
     if (b >= 2 && b <= 4) return forms[1];
     return forms[2];
   }
+  MOSAIC.plural = plural;
 
   // Placed parts for a mosaic: the image's top row is the far edge (largest y), so it reads upright from above.
   MOSAIC.scene = function scene(res) {
@@ -178,7 +180,8 @@
       const TOP = { theta: 0, phi: 90, scale: S_BIG / n, target: [n / 2, n / 2, 0.4] };
       if (t < T_TOP) {
         const u = inOut(clamp((t - T_BUILT) / (T_TOP - T_BUILT)));
-        return cam(cams(flight(1), TOP, u), center[0], center[1], u > 0.5 ? TOP_LIGHT : undefined);
+        // the light turns with the camera instead of switching halfway
+        return cam(cams(flight(1), TOP, u), center[0], center[1], SIDE_LIGHT.map((v, k) => lerp(v, TOP_LIGHT[k], u)));
       }
       const u = inOut(clamp((t - T_TOP) / (T_SIDE - T_TOP)));
       return cam({ theta: 0, phi: 90, scale: lerp(S_BIG, S_PAIR, u) / n, target: TOP.target }, lerp(center[0], legoAt[0], u), lerp(center[1], legoAt[1], u), TOP_LIGHT);
@@ -190,7 +193,8 @@
         const t0 = i * (0.5 / sc.plates.length);
         if (t < t0) return;
         const u = clamp((t - t0) / 0.3);
-        items.push({ part, base: true, move: [0, 0, 3 * (1 - u * u)], alpha: clamp(u / 0.2) });
+        // a plate still in the air sorts by depth with the studs of the landed ones
+        items.push({ part, base: u >= 1, move: [0, 0, 3 * (1 - u * u)], alpha: clamp(u / 0.2) });
       });
       for (let i = 0; i < N; i++) {
         if (t < start[i]) continue;
